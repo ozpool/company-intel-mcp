@@ -30,11 +30,41 @@ Both belong to the same account. Requests without a valid token get `401`.
 
 ## Connect a client
 
-Example configs are in [`examples/`](examples):
+Start the server first (`npm run dev`). Example configs are in [`examples/`](examples).
 
-- Claude Desktop: [`claude_desktop_config.json`](examples/claude_desktop_config.json) (OAuth through `mcp-remote`)
-- Cursor: [`cursor-mcp.json`](examples/cursor-mcp.json) (API key)
-- VS Code: [`vscode-mcp.json`](examples/vscode-mcp.json) (API key; remove `inputs` and `headers` to use OAuth)
+### Claude Desktop
+
+Needs Node.js, because it connects through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote).
+
+1. Open **Settings → Developer → Edit Config**. This opens `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
+2. Copy in **one** of the two entries from [`claude_desktop_config.json`](examples/claude_desktop_config.json): `company-intel` signs in through the browser (OAuth), `company-intel-api-key` uses an API key. With both, every tool shows up twice.
+3. Quit Claude Desktop fully and reopen it. With OAuth, a browser tab opens: sign in or create an account, then approve.
+
+### Claude Code
+
+```bash
+claude mcp add --transport http company-intel http://localhost:3000/mcp
+```
+
+Then run `/mcp` in Claude Code, pick `company-intel` and sign in through the browser. To use an API key instead, add `--header "Authorization: Bearer aik_..."` to the command.
+
+### Cursor
+
+1. Copy [`cursor-mcp.json`](examples/cursor-mcp.json) to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project).
+2. The config reads the key from `COMPANY_INTEL_API_KEY`. Cursor only sees that variable when started from a terminal where it is set (`export COMPANY_INTEL_API_KEY=aik_...`, then `cursor .`). Otherwise, put the key in the file in place of `${env:COMPANY_INTEL_API_KEY}`.
+3. Check **Cursor Settings → MCP**: `company-intel` should show 5 tools.
+
+### VS Code
+
+1. Copy [`vscode-mcp.json`](examples/vscode-mcp.json) to `.vscode/mcp.json` in your project.
+2. Start the server from that file (the **Start** link above it). VS Code asks for your API key once and stores it.
+3. To sign in through the browser (OAuth) instead, remove `inputs` and `headers`.
+
+### Troubleshooting
+
+- **Connection refused**: the server is not running, or runs on another port (`PORT` in `.env`).
+- **401 Unauthorized**: the API key is wrong, revoked or empty. Create a new one with `npm run create-key -- <email>`.
+- **OAuth worked before, now fails** (for example after deleting `data/app.db`): clear the sign-in `mcp-remote` saved with `rm -rf ~/.mcp-auth`, then restart the client.
 
 ## Tools
 
