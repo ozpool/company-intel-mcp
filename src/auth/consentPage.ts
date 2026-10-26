@@ -27,7 +27,8 @@ export function renderConsentPage(input: {
   label { display:block; font-weight:600; margin:12px 0 6px; }
   input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; }
   .error { color:var(--err); margin:10px 0 0; }
-  .row { display:flex; gap:10px; margin-top:20px; }
+  /* Sign in comes first in the markup so Enter submits it; row-reverse still shows Deny on the left. */
+  .row { display:flex; flex-direction:row-reverse; gap:10px; margin-top:20px; }
   button { flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:inherit; font:inherit; font-weight:600; cursor:pointer; }
   button[value=signin] { background:var(--accent); border-color:var(--accent); color:#fff; }
   .signup { margin:16px 0 0; text-align:center; }
@@ -49,8 +50,8 @@ export function renderConsentPage(input: {
     <input id="password" name="password" type="password" autocomplete="current-password" required${input.email ? ' autofocus' : ''}>
     ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ''}
     <div class="row">
-      <button type="submit" name="action" value="deny" formnovalidate>Deny</button>
       <button type="submit" name="action" value="signin">Sign in and approve</button>
+      <button type="submit" name="action" value="deny" formnovalidate>Deny</button>
     </div>
     <p class="signup">New here? <button type="submit" name="action" value="signup">Create an account and approve</button></p>
   </form>

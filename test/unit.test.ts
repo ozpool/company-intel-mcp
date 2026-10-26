@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateSeedData } from '../scripts/seed-data.js';
 import { createAccount, findAccountByCredentials } from '../src/auth/accounts.js';
+import { renderConsentPage } from '../src/auth/consentPage.js';
 import { consentPageCsp } from '../src/auth/oauthProvider.js';
 import { openDatabase } from '../src/db/database.js';
 import { rateLimit } from '../src/http/rateLimit.js';
@@ -71,6 +72,17 @@ describe('accounts', () => {
     expect(() => createAccount(db, 'ada@example.com', 'another password')).toThrow(code);
     expect(() => createAccount(db, 'not-an-email', 'long enough password')).toThrow(code);
     expect(() => createAccount(db, 'bob@example.com', 'short')).toThrow(code);
+  });
+});
+
+describe('renderConsentPage', () => {
+  it('makes sign-in the default button, so Enter never denies', () => {
+    const html = renderConsentPage({ pendingId: 'p', clientName: 'Client', redirectHost: 'localhost' });
+    expect(/<button type="submit" name="action" value="(\w+)"/.exec(html)?.[1]).toBe('signin');
+  });
+  it('escapes what the client controls', () => {
+    const html = renderConsentPage({ pendingId: 'p', clientName: '<script>x</script>', redirectHost: 'localhost' });
+    expect(html).not.toContain('<script>x');
   });
 });
 
