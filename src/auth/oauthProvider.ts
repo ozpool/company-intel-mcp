@@ -6,6 +6,8 @@ import type { AuthorizationParams, OAuthServerProvider } from '@modelcontextprot
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { transaction, type Db } from '../db/database.js';
+import { AppError } from '../errors.js';
+import { createAccount, findAccountByCredentials, type Account } from './accounts.js';
 import { findAccountByApiKey, hashSecret } from './apiKeys.js';
 import { renderConsentPage } from './consentPage.js';
 
@@ -21,15 +23,17 @@ const nowS = () => Math.floor(Date.now() / 1000);
 const newSecret = () => randomBytes(32).toString('base64url');
 
 type PendingParams = Omit<AuthorizationParams, 'resource'> & { resource?: string };
-type TokenRow = { client_id: string; account_id: string; scopes: string; resource: string | null; expires_at: number; name: string };
+type TokenRow = { client_id: string; account_id: string; scopes: string; resource: string | null; expires_at: number; email: string };
+export type ConsentAction = 'signin' | 'signup' | 'show-signin' | 'show-signup' | 'deny';
 
 /**
  * OAuth 2.1 authorization server backed by SQLite. The SDK's handlers do request
  * parsing, client authentication and PKCE verification; this class stores state
  * and decides who gets a token.
  *
- * The person approving a client signs in with their API key, so OAuth tokens act
- * as the same account as that key, and revoking the key cuts off its tokens too.
+ * The person approving a client signs in to (or creates) an account with email and
+ * password, so OAuth tokens act as that account. API keys belong to accounts too, so
+ * a script with a key and an app signed in through OAuth see the same data.
  */
 export class SqliteOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: OAuthRegisteredClientsStore;
@@ -77,14 +81,15 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
   }
 
   /**
-   * Handles the consent form. Returns where to send the browser, or a page to show
-   * again (with its CSP) when the API key was wrong.
+   * Handles the consent form. Returns where to send the browser, or the page to show
+   * again (with its status and CSP) when sign-in or sign-up failed.
    */
   completeConsent(input: {
     pendingId: string;
-    apiKey: string;
-    approve: boolean;
-  }): { redirect: string } | { html: string; csp: string } | null {
+    action: ConsentAction;
+    email: string;
+    password: string;
+  }): { redirect: string } | { html: string; csp: string; status: number } | null {
     const pending = this.db
       .prepare('SELECT client_id, params FROM oauth_pending WHERE id = ? AND expires_at >= ?')
       .get(input.pendingId, nowS()) as { client_id: string; params: string } | undefined;
@@ -93,26 +98,38 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     const redirect = new URL(params.redirectUri);
     if (params.state !== undefined) redirect.searchParams.set('state', params.state);
 
-    if (!input.approve) {
+    if (input.action === 'deny') {
       this.db.prepare('DELETE FROM oauth_pending WHERE id = ?').run(input.pendingId);
       redirect.searchParams.set('error', 'access_denied');
       redirect.searchParams.set('error_description', 'The user denied the request');
       return { redirect: redirect.href };
     }
 
-    const account = findAccountByApiKey(this.db, input.apiKey.trim());
-    if (!account) {
+    const showPage = (mode: 'signin' | 'signup', status: number, error?: string) => {
       const client = this.clientsStore.getClient(pending.client_id) as OAuthClientInformationFull;
       return {
-        html: renderConsentPage({
-          pendingId: input.pendingId,
-          clientName: clientLabel(client),
-          redirectHost: redirect.host,
-          error: 'That API key is not valid. Check it and try again.',
-        }),
+        html: renderConsentPage({ pendingId: input.pendingId, clientName: clientLabel(client), redirectHost: redirect.host, email: input.email, error, mode }),
         csp: consentPageCsp(params.redirectUri),
+        status,
       };
+    };
+    // "Create an account" / "Sign in" links only switch the form; nothing is checked yet.
+    if (input.action === 'show-signup') return showPage('signup', 200);
+    if (input.action === 'show-signin') return showPage('signin', 200);
+
+    let account: Account | undefined;
+    let failure = { status: 401, error: 'Email or password is incorrect.' };
+    if (input.action === 'signup') {
+      try {
+        account = createAccount(this.db, input.email, input.password);
+      } catch (err) {
+        if (!(err instanceof AppError)) throw err;
+        failure = { status: 400, error: err.message };
+      }
+    } else {
+      account = findAccountByCredentials(this.db, input.email, input.password);
     }
+    if (!account) return showPage(input.action, failure.status, failure.error);
 
     const code = newSecret();
     transaction(this.db, () => {
@@ -179,7 +196,7 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
         scopes: SCOPES,
         expiresAt: API_KEY_EXPIRES_AT,
         resource: this.resourceUrl,
-        extra: { accountId: account.id, accountName: account.name, method: 'api_key' },
+        extra: { accountId: account.id, accountEmail: account.email, method: 'api_key' },
       };
     }
     const row = this.findToken(token, 'access');
@@ -190,7 +207,7 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
       scopes: row.scopes.split(' '),
       expiresAt: row.expires_at,
       resource: row.resource ? new URL(row.resource) : undefined,
-      extra: { accountId: row.account_id, accountName: row.name, method: 'oauth' },
+      extra: { accountId: row.account_id, accountEmail: row.email, method: 'oauth' },
     };
   }
 
@@ -211,12 +228,11 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
   }
 
   private findToken(token: string, kind: 'access' | 'refresh'): TokenRow | undefined {
-    // Joining api_keys means a revoked key also invalidates every token issued through it.
     return this.db
       .prepare(
-        `SELECT t.client_id, t.account_id, t.scopes, t.resource, t.expires_at, k.name
-         FROM oauth_tokens t JOIN api_keys k ON k.id = t.account_id
-         WHERE t.token_hash = ? AND t.kind = ? AND t.revoked_at IS NULL AND t.expires_at >= ? AND k.revoked_at IS NULL`,
+        `SELECT t.client_id, t.account_id, t.scopes, t.resource, t.expires_at, a.email
+         FROM oauth_tokens t JOIN accounts a ON a.id = t.account_id
+         WHERE t.token_hash = ? AND t.kind = ? AND t.revoked_at IS NULL AND t.expires_at >= ?`,
       )
       .get(hashSecret(token), kind, nowS()) as TokenRow | undefined;
   }

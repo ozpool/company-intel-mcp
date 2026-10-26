@@ -24,5 +24,5 @@ transaction(db, () => {
 console.log(`Seeded ${companies.length} companies and ${contacts.length} contacts into ${config.databasePath}`);
 
 const { keys } = db.prepare('SELECT COUNT(*) AS keys FROM api_keys WHERE revoked_at IS NULL').get() as { keys: number };
-if (keys === 0) console.log('No API keys yet. Create one with: npm run create-key -- <name>');
+if (keys === 0) console.log('No API keys yet. Create one with: npm run create-key -- <email>');
 db.close();

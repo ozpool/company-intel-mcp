@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { generateSeedData } from '../scripts/seed-data.js';
+import { createAccount, findAccountByCredentials } from '../src/auth/accounts.js';
 import { renderConsentPage } from '../src/auth/consentPage.js';
+import { openDatabase } from '../src/db/database.js';
 import { consentPageCsp } from '../src/auth/oauthProvider.js';
 import { rateLimit } from '../src/http/rateLimit.js';
 import { resolveCountry, toFtsQuery } from '../src/services/companies.js';
@@ -50,10 +52,38 @@ describe('generateSeedData', () => {
   });
 });
 
+describe('accounts', () => {
+  const db = openDatabase(':memory:');
+  const account = createAccount(db, ' Ada@Example.com ', 'correct horse battery');
+
+  it('signs in with the right password only, email in any case', () => {
+    expect(findAccountByCredentials(db, 'ADA@EXAMPLE.COM', 'correct horse battery')).toEqual(account);
+    expect(findAccountByCredentials(db, 'ada@example.com', 'wrong password')).toBeUndefined();
+    expect(findAccountByCredentials(db, 'nobody@example.com', 'correct horse battery')).toBeUndefined();
+  });
+  it('stores a salted hash, never the password', () => {
+    const { password_hash } = db.prepare('SELECT password_hash FROM accounts').get() as { password_hash: string };
+    expect(password_hash).toMatch(/^scrypt\$/);
+    expect(password_hash).not.toContain('correct horse battery');
+  });
+  it('refuses a taken email, a bad email and a short password', () => {
+    const code = expect.objectContaining({ code: 'VALIDATION_ERROR' });
+    expect(() => createAccount(db, 'ada@example.com', 'another password')).toThrow(code);
+    expect(() => createAccount(db, 'not-an-email', 'long enough password')).toThrow(code);
+    expect(() => createAccount(db, 'bob@example.com', 'short')).toThrow(code);
+  });
+});
+
 describe('renderConsentPage', () => {
-  it('makes Approve the default button, so Enter never denies', () => {
-    const html = renderConsentPage({ pendingId: 'p', clientName: 'Client', redirectHost: 'localhost' });
-    expect(/<button type="submit" name="action" value="(\w+)"/.exec(html)?.[1]).toBe('approve');
+  // Enter submits a form's first button, so it must be the main action of each mode, never Deny.
+  const firstButton = (html: string) => /<button[^>]* name="action" value="([\w-]+)"/.exec(html)?.[1];
+  it('makes sign-in the default button on the sign-in form', () => {
+    expect(firstButton(renderConsentPage({ pendingId: 'p', clientName: 'Client', redirectHost: 'localhost' }))).toBe('signin');
+  });
+  it('makes create-account the default button on the sign-up form', () => {
+    const html = renderConsentPage({ pendingId: 'p', clientName: 'Client', redirectHost: 'localhost', mode: 'signup' });
+    expect(firstButton(html)).toBe('signup');
+    expect(html).toContain('autocomplete="new-password"');
   });
 });
 

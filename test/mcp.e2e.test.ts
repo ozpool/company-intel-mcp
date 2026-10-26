@@ -1,6 +1,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { request } from 'node:http';
+import { createAccount } from '../src/auth/accounts.js';
 import { createApiKey, revokeApiKey } from '../src/auth/apiKeys.js';
 import { connectClient, startTestServer, toolError, type TestServer } from './helpers.js';
 
@@ -155,7 +156,8 @@ describe('export_contacts', () => {
     const mine = data<{ enrichedCount: number }>(await client.callTool({ name: 'export_contacts', arguments: { contactIds: ['cnt_1'] } }));
     expect(mine.enrichedCount).toBe(1);
 
-    const other = await connectClient(server, createApiKey(server.db, 'other account').key);
+    const otherAccount = createAccount(server.db, 'other@example.com', 'another password');
+    const other = await connectClient(server, createApiKey(server.db, otherAccount.id, 'other').key);
     const theirs = data<{ enrichedCount: number }>(await other.callTool({ name: 'export_contacts', arguments: { contactIds: ['cnt_1'] } }));
     expect(theirs.enrichedCount).toBe(0);
     await other.close();
@@ -242,7 +244,7 @@ describe('revoked API keys', () => {
   it('stop working immediately', async () => {
     const other = await startTestServer();
     const c = await connectClient(other);
-    revokeApiKey(other.db, other.accountId);
+    revokeApiKey(other.db, other.apiKeyId);
     await expect(c.listTools()).rejects.toThrow();
     await other.close();
   });

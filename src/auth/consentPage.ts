@@ -1,7 +1,16 @@
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-export function renderConsentPage(input: { pendingId: string; clientName: string; redirectHost: string; error?: string }): string {
+export function renderConsentPage(input: {
+  pendingId: string;
+  clientName: string;
+  redirectHost: string;
+  email?: string;
+  error?: string;
+  /** `signup` shows the create-account form; its main button (and Enter) creates the account. */
+  mode?: 'signin' | 'signup';
+}): string {
+  const signup = input.mode === 'signup';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -18,13 +27,15 @@ export function renderConsentPage(input: { pendingId: string; clientName: string
   h1 { font-size:20px; margin:0 0 8px; }
   p { margin:0 0 16px; color:var(--muted); }
   strong { color:var(--fg); }
-  label { display:block; font-weight:600; margin-bottom:6px; }
-  input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; font-family:ui-monospace, monospace; }
+  label { display:block; font-weight:600; margin:12px 0 6px; }
+  input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; }
   .error { color:var(--err); margin:10px 0 0; }
-  /* Approve comes first in the markup so Enter submits it; row-reverse still shows Deny on the left. */
+  /* Sign in comes first in the markup so Enter submits it; row-reverse still shows Deny on the left. */
   .row { display:flex; flex-direction:row-reverse; gap:10px; margin-top:20px; }
   button { flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:inherit; font:inherit; font-weight:600; cursor:pointer; }
-  button[value=approve] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .switch { margin:16px 0 0; text-align:center; }
+  .switch button { padding:0; border:0; color:var(--accent); font-weight:600; text-decoration:underline; }
   ul { margin:0 0 16px; padding-left:20px; color:var(--muted); }
 </style>
 </head>
@@ -36,13 +47,20 @@ export function renderConsentPage(input: { pendingId: string; clientName: string
   <ul><li>Search companies and contacts</li><li>Enrich contacts</li><li>Create contact exports</li></ul>
   <form method="post" action="/oauth/consent">
     <input type="hidden" name="pending_id" value="${escapeHtml(input.pendingId)}">
-    <label for="api_key">Sign in with your API key</label>
-    <input id="api_key" name="api_key" type="password" autocomplete="off" placeholder="aik_…" autofocus>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" required value="${escapeHtml(input.email ?? '')}"${input.email ? '' : ' autofocus'}>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" required${signup ? ' minlength="8" placeholder="At least 8 characters"' : ''}${input.email ? ' autofocus' : ''}>
     ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ''}
     <div class="row">
-      <button type="submit" name="action" value="approve">Approve</button>
-      <button type="submit" name="action" value="deny">Deny</button>
+      ${signup
+        ? '<button class="primary" type="submit" name="action" value="signup">Create account and approve</button>'
+        : '<button class="primary" type="submit" name="action" value="signin">Sign in and approve</button>'}
+      <button type="submit" name="action" value="deny" formnovalidate>Deny</button>
     </div>
+    ${signup
+      ? '<p class="switch">Already have an account? <button type="submit" name="action" value="show-signin" formnovalidate>Sign in</button></p>'
+      : '<p class="switch">New here? <button type="submit" name="action" value="show-signup" formnovalidate>Create an account</button></p>'}
   </form>
 </main>
 </body>
