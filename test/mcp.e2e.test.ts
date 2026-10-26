@@ -1,8 +1,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { request } from 'node:http';
-import { createApiKey, revokeApiKey } from '../src/auth/apiKeys.js';
-import { connectClient, startTestServer, toolError, type TestServer } from './helpers.js';
+import { connectClient, signIn, startTestServer, toolError, type TestServer } from './helpers.js';
 
 let server: TestServer;
 let client: Client;
@@ -32,8 +31,8 @@ describe('authentication', () => {
     );
   });
 
-  it('rejects an unknown API key', async () => {
-    await expect(connectClient(server, 'aik_not-a-real-key')).rejects.toThrow();
+  it('rejects an unknown token', async () => {
+    await expect(connectClient(server, 'not-a-real-token')).rejects.toThrow();
   });
 });
 
@@ -155,7 +154,7 @@ describe('export_contacts', () => {
     const mine = data<{ enrichedCount: number }>(await client.callTool({ name: 'export_contacts', arguments: { contactIds: ['cnt_1'] } }));
     expect(mine.enrichedCount).toBe(1);
 
-    const other = await connectClient(server, createApiKey(server.db, 'other account').key);
+    const other = await connectClient(server, await signIn(server.baseUrl, 'other@example.com', 'another password', 'signup'));
     const theirs = data<{ enrichedCount: number }>(await other.callTool({ name: 'export_contacts', arguments: { contactIds: ['cnt_1'] } }));
     expect(theirs.enrichedCount).toBe(0);
     await other.close();
@@ -199,7 +198,7 @@ describe('rate limiting', () => {
       fetch(limited.mcpUrl, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${limited.apiKey}`,
+          authorization: `Bearer ${limited.accessToken}`,
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
         },
@@ -213,7 +212,8 @@ describe('rate limiting', () => {
   });
 
   it('limits export downloads per client IP', async () => {
-    const limited = await startTestServer({ RATE_LIMIT_PER_MINUTE: '2' });
+    // Signing in already spent one request of this IP's budget, which the consent form shares with downloads.
+    const limited = await startTestServer({ RATE_LIMIT_PER_MINUTE: '3' });
     const statuses = [];
     for (let i = 0; i < 3; i++) statuses.push((await fetch(`${limited.baseUrl}/exports/exp_x.csv`)).status);
     expect(statuses).toEqual([403, 403, 429]);
@@ -235,15 +235,5 @@ describe('Host header check', () => {
     });
     expect(status).toBe(403);
     expect((await fetch(`${server.baseUrl}/healthz`)).status).toBe(200);
-  });
-});
-
-describe('revoked API keys', () => {
-  it('stop working immediately', async () => {
-    const other = await startTestServer();
-    const c = await connectClient(other);
-    revokeApiKey(other.db, other.accountId);
-    await expect(c.listTools()).rejects.toThrow();
-    await other.close();
   });
 });

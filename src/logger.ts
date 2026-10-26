@@ -15,7 +15,7 @@ export type Logger = pino.Logger;
 export function createLogger(level: string): Logger {
   return pino({
     level,
-    redact: ['req.headers.authorization', '*.apiKey', '*.token'],
+    redact: ['req.headers.authorization', '*.password', '*.token'],
     // Pretty output for a human at a terminal when available; JSON lines everywhere else.
     transport:
       process.stdout.isTTY && process.env.NODE_ENV !== 'production' && prettyInstalled
