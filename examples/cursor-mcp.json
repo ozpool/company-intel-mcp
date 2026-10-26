@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "company-intel": {
-      "url": "http://localhost:3000/mcp",
-      "headers": { "Authorization": "Bearer ${env:COMPANY_INTEL_API_KEY}" }
+      "url": "http://localhost:3000/mcp"
     }
   }
 }
