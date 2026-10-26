@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "company-intel": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp"]
+    }
+  }
+}
