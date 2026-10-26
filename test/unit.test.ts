@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateSeedData } from '../scripts/seed-data.js';
+import { renderConsentPage } from '../src/auth/consentPage.js';
 import { consentPageCsp } from '../src/auth/oauthProvider.js';
 import { rateLimit } from '../src/http/rateLimit.js';
 import { resolveCountry, toFtsQuery } from '../src/services/companies.js';
@@ -46,6 +47,13 @@ describe('csvCell', () => {
 describe('generateSeedData', () => {
   it('returns the same data on every call in one process', () => {
     expect(generateSeedData()).toEqual(generateSeedData());
+  });
+});
+
+describe('renderConsentPage', () => {
+  it('makes Approve the default button, so Enter never denies', () => {
+    const html = renderConsentPage({ pendingId: 'p', clientName: 'Client', redirectHost: 'localhost' });
+    expect(/<button type="submit" name="action" value="(\w+)"/.exec(html)?.[1]).toBe('approve');
   });
 });
 

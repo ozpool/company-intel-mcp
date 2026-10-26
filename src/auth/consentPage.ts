@@ -21,7 +21,8 @@ export function renderConsentPage(input: { pendingId: string; clientName: string
   label { display:block; font-weight:600; margin-bottom:6px; }
   input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; font-family:ui-monospace, monospace; }
   .error { color:var(--err); margin:10px 0 0; }
-  .row { display:flex; gap:10px; margin-top:20px; }
+  /* Approve comes first in the markup so Enter submits it; row-reverse still shows Deny on the left. */
+  .row { display:flex; flex-direction:row-reverse; gap:10px; margin-top:20px; }
   button { flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:inherit; font:inherit; font-weight:600; cursor:pointer; }
   button[value=approve] { background:var(--accent); border-color:var(--accent); color:#fff; }
   ul { margin:0 0 16px; padding-left:20px; color:var(--muted); }
@@ -39,8 +40,8 @@ export function renderConsentPage(input: { pendingId: string; clientName: string
     <input id="api_key" name="api_key" type="password" autocomplete="off" placeholder="aik_…" autofocus>
     ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ''}
     <div class="row">
-      <button type="submit" name="action" value="deny">Deny</button>
       <button type="submit" name="action" value="approve">Approve</button>
+      <button type="submit" name="action" value="deny">Deny</button>
     </div>
   </form>
 </main>
