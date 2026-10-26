@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS exports (
   expires_at  INTEGER NOT NULL
 );
 
+-- People who sign in on the OAuth consent page. Passwords are stored as salted scrypt hashes.
+CREATE TABLE IF NOT EXISTS accounts (
+  id            TEXT PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS api_keys (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
