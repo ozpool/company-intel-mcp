@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "company-intel": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp"]
+    },
+    "company-intel-api-key": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp", "--header", "Authorization:${AUTH_HEADER}"],
+      "env": { "AUTH_HEADER": "Bearer aik_your_key_here" }
+    }
+  }
+}
