@@ -1,8 +1,10 @@
 {
+  "inputs": [{ "id": "company-intel-key", "type": "promptString", "description": "Company Intelligence API key", "password": true }],
   "servers": {
     "company-intel": {
       "type": "http",
-      "url": "http://localhost:3000/mcp"
+      "url": "http://localhost:3000/mcp",
+      "headers": { "Authorization": "Bearer ${input:company-intel-key}" }
     }
   }
 }

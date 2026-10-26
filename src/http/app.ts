@@ -67,16 +67,15 @@ export function createApp({ config, db, logger, enrichment }: AppDeps) {
     const body = req.body as Record<string, string | undefined>;
     const outcome = provider.completeConsent({
       pendingId: body.pending_id ?? '',
-      action: body.action === 'signin' || body.action === 'signup' ? body.action : 'deny',
-      email: body.email ?? '',
-      password: body.password ?? '',
+      apiKey: body.api_key ?? '',
+      approve: body.action === 'approve',
     });
     if (!outcome) {
       res.status(400).type('text').send('This authorization request has expired. Start the connection again from your MCP client.');
     } else if ('redirect' in outcome) {
       res.redirect(302, outcome.redirect);
     } else {
-      res.status(outcome.status).type('html').set('Cache-Control', 'no-store').set('Content-Security-Policy', outcome.csp).send(outcome.html);
+      res.status(401).type('html').set('Cache-Control', 'no-store').set('Content-Security-Policy', outcome.csp).send(outcome.html);
     }
   });
 

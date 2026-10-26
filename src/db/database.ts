@@ -78,12 +78,14 @@ CREATE TABLE IF NOT EXISTS exports (
   expires_at  INTEGER NOT NULL
 );
 
--- People who sign in on the OAuth consent page. Passwords are stored as salted scrypt hashes.
-CREATE TABLE IF NOT EXISTS accounts (
-  id            TEXT PRIMARY KEY,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at    TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS api_keys (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  key_hash     TEXT NOT NULL UNIQUE,
+  key_prefix   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -103,7 +105,7 @@ CREATE TABLE IF NOT EXISTS oauth_pending (
 CREATE TABLE IF NOT EXISTS oauth_codes (
   code_hash      TEXT PRIMARY KEY,
   client_id      TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
-  account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  account_id     TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
   code_challenge TEXT NOT NULL,
   redirect_uri   TEXT NOT NULL,
   scopes         TEXT NOT NULL,
@@ -115,7 +117,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   token_hash TEXT PRIMARY KEY,
   kind       TEXT NOT NULL CHECK (kind IN ('access', 'refresh')),
   client_id  TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
-  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
   scopes     TEXT NOT NULL,
   resource   TEXT,
   expires_at INTEGER NOT NULL,
