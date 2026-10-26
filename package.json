@@ -8,7 +8,6 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "seed": "node --disable-warning=ExperimentalWarning --import tsx scripts/seed.ts",
-    "create-key": "node --disable-warning=ExperimentalWarning --import tsx scripts/create-key.ts",
     "demo": "node --disable-warning=ExperimentalWarning --import tsx scripts/demo-client.ts",
     "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run"
   },
