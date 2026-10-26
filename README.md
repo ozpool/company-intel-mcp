@@ -8,9 +8,9 @@ Requires Node.js 22.13 or newer.
 
 ```bash
 npm install
-npm run seed                 # load sample data: 60 companies, 337 contacts
-npm run create-key -- demo   # create an API key (printed once, copy it)
-npm run dev                  # server at http://localhost:3000/mcp
+npm run seed                            # load sample data: 60 companies, 337 contacts
+npm run create-key -- you@example.com   # create your account (asks for a password) and an API key
+npm run dev                             # server at http://localhost:3000/mcp
 ```
 
 Try every tool with the scripted client, in a second terminal:
@@ -23,10 +23,10 @@ Run the tests with `npm test`.
 
 ## Authentication
 
-- **API key**: send `Authorization: Bearer aik_...`. Used by scripts, tests and the demo client.
-- **OAuth 2.1 + PKCE**: clients like Claude Desktop and VS Code open a sign-in page in the browser. Paste your API key once and approve.
+- **People** (Claude Desktop, VS Code): OAuth 2.1 + PKCE. The client opens a sign-in page in the browser, where you sign in with email and password or create an account.
+- **Scripts and tests**: an API key, sent as `Authorization: Bearer aik_...`. Create one with `npm run create-key -- <email>`. It is shown once; only its hash is stored.
 
-Requests without a valid token get `401`.
+Both belong to the same account. Requests without a valid token get `401`.
 
 ## Connect a client
 

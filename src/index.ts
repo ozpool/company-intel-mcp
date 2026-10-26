@@ -11,7 +11,7 @@ const db = openDatabase(config.databasePath);
 const { n } = db.prepare('SELECT COUNT(*) AS n FROM companies').get() as { n: number };
 if (n === 0) logger.warn('Database is empty. Run `npm run seed` to load sample data.');
 const { keys } = db.prepare('SELECT COUNT(*) AS keys FROM api_keys WHERE revoked_at IS NULL').get() as { keys: number };
-if (keys === 0) logger.warn('No API keys yet. Create one with `npm run create-key -- <name>`.');
+if (keys === 0) logger.warn('No API keys yet. Create one with `npm run create-key -- <email>`.');
 if (config.exportSigningSecretGenerated) {
   logger.warn('EXPORT_SIGNING_SECRET is not set; using a random one, so export links stop working after a restart.');
 }

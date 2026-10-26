@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateSeedData } from '../scripts/seed-data.js';
+import { createAccount } from '../src/auth/accounts.js';
 import { createApiKey } from '../src/auth/apiKeys.js';
 import { loadConfig } from '../src/config.js';
 import { openDatabase, type Db } from '../src/db/database.js';
@@ -9,7 +10,18 @@ import { createApp } from '../src/http/app.js';
 import { createLogger } from '../src/logger.js';
 import { simulatedProvider } from '../src/services/enrichment.js';
 
-export type TestServer = { baseUrl: string; mcpUrl: URL; db: Db; apiKey: string; accountId: string; close: () => Promise<void> };
+export const TEST_EMAIL = 'test@example.com';
+export const TEST_PASSWORD = 'correct horse battery';
+
+export type TestServer = {
+  baseUrl: string;
+  mcpUrl: URL;
+  db: Db;
+  accountId: string;
+  apiKey: string;
+  apiKeyId: string;
+  close: () => Promise<void>;
+};
 
 /** Starts the real app on a random port with a seeded in-memory database. */
 export async function startTestServer(env: Record<string, string> = {}): Promise<TestServer> {
@@ -23,7 +35,8 @@ export async function startTestServer(env: Record<string, string> = {}): Promise
   );
   companies.forEach((c) => insertCompany.run(c));
   contacts.forEach((c) => insertContact.run(c));
-  const { key, account } = createApiKey(db, 'test');
+  const account = createAccount(db, TEST_EMAIL, TEST_PASSWORD);
+  const { id: apiKeyId, key } = createApiKey(db, account.id, 'test');
 
   // Bind first so PUBLIC_URL can carry the real port.
   const { createServer } = await import('node:http');
@@ -40,8 +53,9 @@ export async function startTestServer(env: Record<string, string> = {}): Promise
     baseUrl,
     mcpUrl: config.mcpUrl,
     db,
-    apiKey: key,
     accountId: account.id,
+    apiKey: key,
+    apiKeyId,
     close: () => new Promise((resolve) => http.close(() => resolve())),
   };
 }

@@ -4,7 +4,7 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import { hostHeaderValidation } from '@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js';
 import { getOAuthProtectedResourceMetadataUrl, mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SCOPES, SqliteOAuthProvider } from '../auth/oauthProvider.js';
+import { SCOPES, SqliteOAuthProvider, type ConsentAction } from '../auth/oauthProvider.js';
 import type { Config } from '../config.js';
 import type { Db } from '../db/database.js';
 import type { Logger } from '../logger.js';
@@ -12,6 +12,8 @@ import { createMcpServer } from '../mcp/server.js';
 import type { EnrichmentProvider } from '../services/enrichment.js';
 import { readExport } from '../services/exports.js';
 import { rateLimit } from './rateLimit.js';
+
+const CONSENT_ACTIONS: ConsentAction[] = ['signin', 'signup', 'show-signin', 'show-signup'];
 
 export type AppDeps = { config: Config; db: Db; logger: Logger; enrichment: EnrichmentProvider };
 
@@ -67,15 +69,16 @@ export function createApp({ config, db, logger, enrichment }: AppDeps) {
     const body = req.body as Record<string, string | undefined>;
     const outcome = provider.completeConsent({
       pendingId: body.pending_id ?? '',
-      apiKey: body.api_key ?? '',
-      approve: body.action === 'approve',
+      action: CONSENT_ACTIONS.includes(body.action as ConsentAction) ? (body.action as ConsentAction) : 'deny',
+      email: body.email ?? '',
+      password: body.password ?? '',
     });
     if (!outcome) {
       res.status(400).type('text').send('This authorization request has expired. Start the connection again from your MCP client.');
     } else if ('redirect' in outcome) {
       res.redirect(302, outcome.redirect);
     } else {
-      res.status(401).type('html').set('Cache-Control', 'no-store').set('Content-Security-Policy', outcome.csp).send(outcome.html);
+      res.status(outcome.status).type('html').set('Cache-Control', 'no-store').set('Content-Security-Policy', outcome.csp).send(outcome.html);
     }
   });
 
