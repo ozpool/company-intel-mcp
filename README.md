@@ -36,9 +36,14 @@ Start the server first (`npm run dev`). Example configs are in [`examples/`](exa
 
 Needs Node.js, because it connects through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote).
 
-1. Open **Settings → Developer → Edit Config**. This opens `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
-2. Copy in one of the examples: [`claude_desktop_config.oauth.json`](examples/claude_desktop_config.oauth.json) signs in through the browser (OAuth), [`claude_desktop_config.api-key.json`](examples/claude_desktop_config.api-key.json) uses an API key (replace `aik_your_key_here`).
-3. Quit Claude Desktop fully and reopen it. With OAuth, a browser tab opens: sign in or create an account, then approve.
+1. Quit Claude Desktop fully (Cmd+Q). It rewrites its config file while running, so edits made while it is open can be lost.
+2. Open the config file: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows). On macOS:
+   ```bash
+   open -e ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   ```
+3. Add the `mcpServers` block from one of the examples next to what is already in the file: [`claude_desktop_config.oauth.json`](examples/claude_desktop_config.oauth.json) signs in through the browser (OAuth), [`claude_desktop_config.api-key.json`](examples/claude_desktop_config.api-key.json) uses an API key (replace `aik_your_key_here`).
+4. If Node.js is installed with nvm, Claude Desktop cannot find `npx`. Replace `"npx"` with the full path from `which npx`, and add `"env": { "PATH": "<that folder>:/usr/bin:/bin" }` to the entry.
+5. Open Claude Desktop. With OAuth, a browser tab opens: sign in or create an account, then approve.
 
 ### Claude Code
 
@@ -63,6 +68,7 @@ Then run `/mcp` in Claude Code, pick `company-intel` and sign in through the bro
 ### Troubleshooting
 
 - **Connection refused**: the server is not running, or runs on another port (`PORT` in `.env`).
+- **`company-intel` missing in Claude Desktop**: the config was edited while the app was open, or `npx` was not found (see step 4 above). Quit the app, check the file still has the `mcpServers` block, then reopen it.
 - **401 Unauthorized**: the API key is wrong, revoked or empty. Create a new one with `npm run create-key -- <email>`.
 - **OAuth worked before, now fails** (for example after deleting `data/app.db`): clear the sign-in `mcp-remote` saved with `rm -rf ~/.mcp-auth`, then restart the client.
 
