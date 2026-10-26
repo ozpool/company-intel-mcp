@@ -285,7 +285,7 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 
 ## Testing
 
-`npm test` runs 46 tests in under a second. The end-to-end tests start the real Express app on a random port with an in-memory database and talk to it through the official MCP SDK client:
+`npm test` runs 47 tests in under a second. The end-to-end tests start the real Express app on a random port with an in-memory database and talk to it through the official MCP SDK client:
 
 - the `401` and its `WWW-Authenticate` header, unknown keys, revoked keys
 - tool discovery: names, schemas, annotations
