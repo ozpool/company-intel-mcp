@@ -62,8 +62,8 @@ Then run `/mcp` in Claude Code, pick `company-intel` and sign in through the bro
 ### VS Code
 
 1. Copy [`vscode-mcp.json`](examples/vscode-mcp.json) to `.vscode/mcp.json` in your project.
-2. Start the server from that file (the **Start** link above it). VS Code asks for your API key once and stores it.
-3. To sign in through the browser (OAuth) instead, remove `inputs` and `headers`.
+2. Start the server from that file (the **Start** link above it). VS Code asks to sign in, then opens the sign-in page in the browser: sign in or create an account, then approve.
+3. To use an API key instead, copy [`vscode-mcp.api-key.json`](examples/vscode-mcp.api-key.json). VS Code asks for the key once and stores it.
 
 ### Troubleshooting
 
