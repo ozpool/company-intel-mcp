@@ -4,8 +4,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI clients (Claude De
 
 - **5 tools**: `search_companies`, `get_company`, `search_contacts`, `enrich_contact`, `export_contacts`
 - **Two ways to authenticate**: an API key, or OAuth 2.1 with PKCE (browser sign-in, with discovery and dynamic client registration)
-- **Streamable HTTP**, stateless: any instance can answer any request
-- **SQLite** with full-text search, using Node's built-in `node:sqlite`. No native build, no database server.
+- **Streamable HTTP**, stateless
+- **SQLite** with full-text search, through Node's built-in `node:sqlite`
 - **Seed data**: 60 companies and 337 contacts, generated from a fixed seed so the ids never change
 
 ---
@@ -33,7 +33,7 @@ MCP_API_KEY=aik_... npm run demo
 | `npm run build && npm start` | Production build and run |
 | `npm run seed` | Reset the sample data. API keys are kept; a first key is created if none exist. |
 | `npm run create-key -- <name>` | Create another API key (another account) |
-| `npm test` | Unit and end-to-end tests (46) |
+| `npm test` | Unit and end-to-end tests |
 | `npm run typecheck` | Type-check everything, including tests and scripts |
 
 `GET /healthz` returns `{ "status": "ok" }` once the database answers. It needs no token, so containers and load balancers can use it as a health check.
@@ -111,14 +111,14 @@ Free-text search over name, industry, description and tags, ranked by relevance 
 // → { "contactId", "email": "malinda.cormier@opalintelligence.example", "linkedin": "https://www.linkedin.com/in/malinda-cormier-305d42",
 //     "source": "simulated", "enrichedAt": "...", "cached": false }
 ```
-The result is stored. Calling it again returns the same data with `cached: true`, without another provider lookup. Real enrichment APIs charge per lookup, so this matters. The stored result is shared, so the provider is called only once per contact. Access is tracked per account: a contact's email and LinkedIn appear in an account's exports only after that account has enriched the contact itself.
+The result is stored and shared across accounts, so the provider is paid once per contact (real enrichment APIs charge per lookup). Calling it again returns the same data with `cached: true`. Access is still tracked per account: an account's exports include a contact's email and LinkedIn only after that account has enriched the contact itself.
 
 ### `export_contacts`
 ```jsonc
 { "contactIds": ["cnt_204", "cnt_206"] }                 // 1-500 ids; duplicates are removed
 // → { "exportId", "downloadUrl": "http://localhost:3000/exports/exp_….csv?exp=…&sig=…", "expiresAt", "rowCount": 2, "enrichedCount": 1 }
 ```
-The CSV contains contact and company fields, plus email and LinkedIn for contacts this account has enriched. If any id is missing, nothing is exported, and the error lists the missing ids.
+The CSV contains contact and company fields, plus email and LinkedIn where this account has enriched the contact. If any id is missing, nothing is exported, and the error lists the missing ids.
 
 ### Errors
 
@@ -225,7 +225,7 @@ flowchart LR
     CO & CT & EN & EX --> DB
 ```
 
-**Layers.** HTTP handles transport, auth, rate limiting and logging. The MCP layer holds tool definitions: schemas, descriptions, and turning results and errors into tool results. Services hold the business logic and SQL. Tool handlers are one line each, so the same services could sit behind a REST API unchanged.
+**Layers.** Services hold the business logic and SQL. Tool handlers are one line each, so the same services could sit behind a REST API unchanged.
 
 ```
 src/
@@ -235,7 +235,7 @@ src/
   logger.ts             pino, redacts secrets
   db/database.ts        schema, FTS5 index + triggers, transaction helper
   http/app.ts           routes and middleware
-  http/rateLimit.ts     token bucket per account (per IP before auth)
+  http/rateLimit.ts     token bucket rate limiter
   mcp/server.ts         the 5 tools + error/logging wrapper
   auth/apiKeys.ts       create / verify / revoke API keys
   auth/oauthProvider.ts OAuth 2.1 provider (SQLite-backed)
@@ -252,22 +252,21 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 | **Streamable HTTP, stateless** (a new `McpServer` per request) | With no sessions to pin, it scales horizontally behind any load balancer. Building a server per request costs microseconds. |
 | **SQLite via built-in `node:sqlite`** | Nothing to install or run, and no native module to compile. FTS5 gives ranked search without a search service. Moving to Postgres would mean rewriting the services' SQL, not the tools. |
 | **Full-text search with BM25 and per-column weights** | `"AI companies"` is natural language, and `LIKE '%AI companies%'` matches nothing. A match on name or industry outranks a passing mention in the description. User text is reduced to plain words, so FTS operators cannot be injected. |
-| **Enrichment behind a provider interface, results cached** | The simulated provider is deterministic, so demos and tests are repeatable. A real vendor (Apollo, Clearbit, …) means one new `EnrichmentProvider`. Caching makes calls idempotent and avoids paying twice. |
-| **Shared enrichment cache, per-account access** | The provider is paid once per contact, whichever account asks first. Exports join on `enrichment_unlocks`, so one account's enrichment work never leaks into another account's CSV. |
-| **Loopback bind and a Host header check** | The MCP transport spec asks local servers to bind to localhost and guard against DNS rebinding. `HOST` opens it up for containers; `PUBLIC_URL`'s hostname is the only other accepted `Host`. |
+| **Enrichment behind a provider interface; shared cache, per-account access** | The simulated provider is deterministic, so demos and tests are repeatable. A real vendor (Apollo, Clearbit, …) means one new `EnrichmentProvider`. Exports join on `enrichment_unlocks`, so one account's enrichment never leaks into another account's CSV. |
+| **Loopback bind and a Host header check** | The MCP transport spec asks local servers to bind to localhost and guard against DNS rebinding. See `HOST` and `PUBLIC_URL` under Configuration. |
 | **Exports as signed, expiring URLs** | The link must open in a browser or spreadsheet that has no bearer token. An HMAC over `id + expiry`, compared in constant time, makes it unguessable and time-limited without making the download endpoint public. CSV cells are protected against formula injection. |
-| **Expected errors returned as tool results, not protocol errors** | The model sees `NOT_FOUND` and can correct itself. Unexpected errors are logged with full detail, but the client only gets a generic message. |
+| **Expected errors returned as tool results, not protocol errors** | The model reads the result and can correct its call. A protocol error usually stops at the client. |
 | **OAuth through the SDK's handlers, with a custom provider** | The SDK covers the parts that are easy to get wrong (PKCE check, client authentication, metadata). This code owns the storage and the decision of who gets a token. |
 | **Tool descriptions written for the model** | Each says when to use it, what the fields mean, and how it chains to the next tool. Server `instructions` describe the overall flow. |
 
 ### Non-functional requirements covered
 
-- **Validation**: zod schemas on every tool input, also used to generate the JSON Schema clients see; environment config is validated at startup.
-- **Error handling**: stable error codes, `isError` results, a JSON-RPC-shaped error handler for bad HTTP bodies, graceful shutdown.
+- **Validation**: zod schemas on every tool input (see Tools); environment config is validated at startup.
+- **Error handling**: stable error codes (see Errors), a JSON-RPC-shaped error handler for bad HTTP bodies, graceful shutdown.
 - **Logging**: structured pino logs, one line per request (request id, account, JSON-RPC method, status, latency) and one per tool call (tool, outcome, error code, latency). Authorization headers are redacted; export link signatures are never logged.
 - **Rate limiting**: a token bucket per account (`RATE_LIMIT_PER_MINUTE`), with `RateLimit-*` and `Retry-After` headers. The consent form and export downloads have no account yet, so they are limited per client IP. The SDK rate-limits its own OAuth endpoints.
 - **Type safety**: strict TypeScript with `noUncheckedIndexedAccess`; tool argument types are inferred from the zod schemas.
-- **API documentation**: this README, plus self-describing tools (`tools/list` returns schemas, descriptions and annotations).
+- **API documentation**: this README, plus self-describing tools through `tools/list`.
 
 ---
 
@@ -281,7 +280,7 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 | `DATABASE_PATH` | `data/app.db` | |
 | `EXPORT_SIGNING_SECRET` | random per start | Set it, or export links stop working after a restart (the server warns). |
 | `EXPORT_TTL_MINUTES` | `15` | |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Per account on `/mcp`; per IP on the consent form and export downloads |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Requests per minute; see Rate limiting above |
 | `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error`, or `silent` |
 
 ## Testing
