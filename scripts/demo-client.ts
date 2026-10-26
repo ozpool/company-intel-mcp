@@ -5,7 +5,7 @@
  *   MCP_API_KEY=aik_... npm run demo
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 const MCP_URL = new URL(process.env.MCP_URL ?? 'http://localhost:3000/mcp');
 const API_KEY = process.env.MCP_API_KEY;
@@ -56,7 +56,13 @@ console.log(red(`✗ HTTP ${res.status}`), dim(res.headers.get('www-authenticate
 
 heading('Connect with an API key');
 const client = new Client({ name: 'demo-client', version: '1.0.0' });
-await client.connect(new StreamableHTTPClientTransport(MCP_URL, { requestInit: { headers: { Authorization: `Bearer ${API_KEY}` } } }));
+try {
+  await client.connect(new StreamableHTTPClientTransport(MCP_URL, { requestInit: { headers: { Authorization: `Bearer ${API_KEY}` } } }));
+} catch (err) {
+  if (!(err instanceof StreamableHTTPError && err.code === 401)) throw err;
+  console.error(red('✗ HTTP 401: the API key in MCP_API_KEY is wrong or revoked.'), '\nCreate a new one with `npm run create-key -- <email>`.');
+  process.exit(1);
+}
 const info = client.getServerVersion();
 console.log(green(`✓ connected to ${info?.name} v${info?.version}`));
 
