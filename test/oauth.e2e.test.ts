@@ -1,27 +1,34 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { hashSecret } from '../src/auth/oauthProvider.js';
-import {
-  REDIRECT_URI as redirectUri,
-  TEST_EMAIL,
-  TEST_PASSWORD,
-  connectClient,
-  consent as submitConsent,
-  pendingIdOf,
-  pkce,
-  registerClient,
-  startTestServer,
-  type TestServer,
-} from './helpers.js';
+import { hashSecret, revokeApiKey } from '../src/auth/apiKeys.js';
+import { connectClient, startTestServer, type TestServer } from './helpers.js';
 
 let server: TestServer;
 let clientId: string;
+const redirectUri = 'http://localhost:7777/callback';
 
 beforeAll(async () => {
   server = await startTestServer();
-  clientId = await registerClient(server.baseUrl);
+  const res = await fetch(`${server.baseUrl}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_name: 'Test Client',
+      redirect_uris: [redirectUri],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  expect(res.status).toBe(201);
+  clientId = ((await res.json()) as { client_id: string }).client_id;
 });
 afterAll(() => server.close());
+
+const pkce = () => {
+  const verifier = randomBytes(32).toString('base64url');
+  return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
+};
 
 /** Opens the consent page and returns its pending request id. `undefined` in `overrides` drops a parameter. */
 async function startAuthorization(challenge: string, overrides: Record<string, string | undefined> = {}) {
@@ -43,11 +50,16 @@ async function startAuthorization(challenge: string, overrides: Record<string, s
   expect(res.headers.get('content-security-policy')).toContain(`form-action 'self' ${new URL(redirectUri).origin}`);
   const html = await res.text();
   expect(html).toContain('Test Client');
-  return pendingIdOf(html);
+  return /name="pending_id" value="([^"]+)"/.exec(html)![1]!;
 }
 
-const consent = (pendingId: string, fields: Record<string, string>) => submitConsent(server.baseUrl, pendingId, fields);
-const signInFields = { action: 'signin', email: TEST_EMAIL, password: TEST_PASSWORD };
+const consent = (pendingId: string, apiKey: string, action: 'approve' | 'deny') =>
+  fetch(`${server.baseUrl}/oauth/consent`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ pending_id: pendingId, api_key: apiKey, action }),
+  });
 
 const token = (params: Record<string, string>) =>
   fetch(`${server.baseUrl}/token`, {
@@ -58,7 +70,7 @@ const token = (params: Record<string, string>) =>
 
 async function authorize(overrides: Record<string, string | undefined> = {}) {
   const { verifier, challenge } = pkce();
-  const res = await consent(await startAuthorization(challenge, overrides), signInFields);
+  const res = await consent(await startAuthorization(challenge, overrides), server.apiKey, 'approve');
   expect(res.status).toBe(302);
   const location = new URL(res.headers.get('location')!);
   expect(location.searchParams.get('state')).toBe('state-123');
@@ -85,29 +97,15 @@ describe('OAuth 2.1 authorization code + PKCE', () => {
     await client.close();
   });
 
-  it('shows the consent page again, email kept, for a wrong password', async () => {
-    const res = await consent(await startAuthorization(pkce().challenge), { ...signInFields, password: 'wrong password' });
+  it('shows the consent page again with an error for a wrong API key', async () => {
+    const res = await consent(await startAuthorization(pkce().challenge), 'aik_wrong', 'approve');
     expect(res.status).toBe(401);
     expect(res.headers.get('content-security-policy')).toContain(`form-action 'self' ${new URL(redirectUri).origin}`);
-    const html = await res.text();
-    expect(html).toContain('Email or password is incorrect');
-    expect(html).toContain(`value="${TEST_EMAIL}"`);
-    expect(html).not.toContain('wrong password');
-  });
-
-  it('creates an account on the consent page, once per email', async () => {
-    const signup = { action: 'signup', email: 'new@example.com', password: 'a new password' };
-    const created = await consent(await startAuthorization(pkce().challenge), signup);
-    expect(created.status).toBe(302);
-    expect(new URL(created.headers.get('location')!).searchParams.get('code')).toBeTruthy();
-
-    const again = await consent(await startAuthorization(pkce().challenge), signup);
-    expect(again.status).toBe(400);
-    expect(await again.text()).toContain('already exists');
+    expect(await res.text()).toContain('not valid');
   });
 
   it('sends access_denied back to the client when the user denies', async () => {
-    const res = await consent(await startAuthorization(pkce().challenge), { action: 'deny' });
+    const res = await consent(await startAuthorization(pkce().challenge), '', 'deny');
     expect(new URL(res.headers.get('location')!).searchParams.get('error')).toBe('access_denied');
   });
 
@@ -166,17 +164,12 @@ describe('OAuth 2.1 authorization code + PKCE', () => {
     expect((await call(plant('admin', server.mcpUrl.href))).status).toBe(403);
   });
 
-  it('stops accepting an access token once it is revoked', async () => {
+  it('cuts off OAuth tokens when the approving API key is revoked', async () => {
     const { code, verifier } = await authorize();
     const { access_token } = (await (await token({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirectUri })).json()) as {
       access_token: string;
     };
-    const revoked = await fetch(`${server.baseUrl}/revoke`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: clientId, token: access_token }),
-    });
-    expect(revoked.status).toBe(200);
+    revokeApiKey(server.db, server.accountId);
     await expect(connectClient(server, access_token)).rejects.toThrow();
   });
 });
@@ -188,7 +181,7 @@ describe('MCP SDK client OAuth (what MCP clients and mcp-remote run)', () => {
     const { UnauthorizedError } = await import('@modelcontextprotocol/sdk/client/auth.js');
     const fresh = await startTestServer();
 
-    // Stands in for the browser: open the consent page, sign in, catch the redirect.
+    // Stands in for the browser: open the consent page, approve with the API key, catch the redirect.
     let code = '';
     const state: Record<string, unknown> = {};
     const provider = {
@@ -201,8 +194,14 @@ describe('MCP SDK client OAuth (what MCP clients and mcp-remote run)', () => {
       saveCodeVerifier: (v: string) => void (state.verifier = v),
       codeVerifier: () => state.verifier as string,
       redirectToAuthorization: async (url: URL) => {
-        const pendingId = pendingIdOf(await (await fetch(url)).text());
-        const res = await submitConsent(fresh.baseUrl, pendingId, signInFields);
+        const html = await (await fetch(url)).text();
+        const pendingId = /name="pending_id" value="([^"]+)"/.exec(html)![1]!;
+        const res = await fetch(`${fresh.baseUrl}/oauth/consent`, {
+          method: 'POST',
+          redirect: 'manual',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ pending_id: pendingId, api_key: fresh.apiKey, action: 'approve' }),
+        });
         code = new URL(res.headers.get('location')!).searchParams.get('code')!;
       },
     };
