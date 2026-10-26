@@ -3,7 +3,7 @@
 An [MCP](https://modelcontextprotocol.io) server that lets AI clients (Claude Desktop, Claude Code, Cursor, VS Code, or any MCP client) search companies, find contacts, enrich them with email and LinkedIn, and export them to CSV.
 
 - **5 tools**: `search_companies`, `get_company`, `search_contacts`, `enrich_contact`, `export_contacts`
-- **Two ways to authenticate**: an API key, or OAuth 2.1 with PKCE (browser sign-in, with discovery and dynamic client registration)
+- **OAuth 2.1 with PKCE**: clients discover the server, register themselves and open a sign-in page, where users create an account or sign in
 - **Streamable HTTP**, stateless
 - **SQLite** with full-text search, through Node's built-in `node:sqlite`
 - **Seed data**: 60 companies and 337 contacts, generated from a fixed seed so the ids never change
@@ -17,22 +17,21 @@ Requires **Node.js 22.13 or newer**.
 ```bash
 npm install
 cp .env.example .env        # optional; the defaults work for local use
-npm run seed                # loads sample data and prints your API key (shown once)
+npm run seed                # loads the sample data
 npm run dev                 # http://localhost:3000/mcp
 ```
 
-In a second terminal, run the scripted client. It walks through every tool and every kind of error:
+In a second terminal, run the scripted client. It signs in through OAuth (creating `demo@example.com` on its first run), then walks through every tool and every kind of error:
 
 ```bash
-MCP_API_KEY=aik_... npm run demo
+npm run demo
 ```
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Start with reload on change |
 | `npm run build && npm start` | Production build and run |
-| `npm run seed` | Reset the sample data. API keys are kept; a first key is created if none exist. |
-| `npm run create-key -- <name>` | Create another API key (another account) |
+| `npm run seed` | Reset the sample data. Accounts are kept. |
 | `npm test` | Unit and end-to-end tests |
 | `npm run typecheck` | Type-check everything, including tests and scripts |
 
@@ -42,7 +41,7 @@ MCP_API_KEY=aik_... npm run demo
 
 ## Connect an MCP client
 
-Ready-made configs are in [`examples/`](examples). Replace `aik_your_key_here` with the key from `npm run seed`.
+Ready-made configs are in [`examples/`](examples). They hold only the server URL. On first use, each client opens the server's sign-in page in a browser: create an account (or sign in) and approve. From then on the client keeps its own short-lived tokens.
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`). Claude Desktop starts local commands, so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridges it to the HTTP server:
 
@@ -57,21 +56,18 @@ Ready-made configs are in [`examples/`](examples). Replace `aik_your_key_here` w
 }
 ```
 
-This uses OAuth: on first use a browser opens the consent page, you paste your API key once, and the client gets its own short-lived tokens from then on. To send the API key directly instead, use the `company-intel-api-key` entry in [`examples/claude_desktop_config.json`](examples/claude_desktop_config.json).
-
 **Claude Code**
 
 ```bash
-claude mcp add --transport http company-intel http://localhost:3000/mcp \
-  --header "Authorization: Bearer aik_your_key_here"
-# or leave out --header and run /mcp inside Claude Code to sign in with OAuth
+claude mcp add --transport http company-intel http://localhost:3000/mcp
+# then run /mcp inside Claude Code and pick company-intel to sign in
 ```
 
-**Cursor** (`.cursor/mcp.json`): see [`examples/cursor-mcp.json`](examples/cursor-mcp.json). It reads the key from the `COMPANY_INTEL_API_KEY` environment variable.
+**Cursor** (`.cursor/mcp.json`): see [`examples/cursor-mcp.json`](examples/cursor-mcp.json).
 
-**VS Code** (`.vscode/mcp.json`): see [`examples/vscode-mcp.json`](examples/vscode-mcp.json). It prompts for the key and stores it securely.
+**VS Code** (`.vscode/mcp.json`): see [`examples/vscode-mcp.json`](examples/vscode-mcp.json).
 
-**MCP Inspector**: `npx @modelcontextprotocol/inspector`. Choose transport *Streamable HTTP*, URL `http://localhost:3000/mcp`, and either set a Bearer token or use the OAuth flow.
+**MCP Inspector**: `npx @modelcontextprotocol/inspector`. Choose transport *Streamable HTTP*, URL `http://localhost:3000/mcp`, and use its OAuth flow to sign in.
 
 ---
 
@@ -144,11 +140,7 @@ Tool failures come back as a normal tool result with `isError: true`, so the mod
 
 ## Authentication
 
-The `/mcp` endpoint rejects any request without a valid `Authorization: Bearer <token>` header. Two kinds of token are accepted.
-
-**API keys** (`aik_…`): 192 bits of randomness. Only the SHA-256 hash is stored. They can be revoked, and `last_used_at` is recorded. Create them with `npm run create-key`.
-
-**OAuth 2.1 access tokens.** The server is its own authorization server, built on the MCP SDK's OAuth handlers with a SQLite-backed provider ([`src/auth/oauthProvider.ts`](src/auth/oauthProvider.ts)):
+The `/mcp` endpoint rejects any request without a valid `Authorization: Bearer <token>` header. Tokens come from OAuth 2.1 with PKCE. The server is its own authorization server, built on the MCP SDK's OAuth handlers with a SQLite-backed provider ([`src/auth/oauthProvider.ts`](src/auth/oauthProvider.ts)):
 
 - Discovery: `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414). A `401` points clients at the first one.
 - Dynamic client registration at `/register` (RFC 7591), so clients need no manual setup.
@@ -157,8 +149,7 @@ The `/mcp` endpoint rejects any request without a valid `Authorization: Bearer <
 - Tokens are bound to the `/mcp` resource (RFC 8707). Requests for any other resource are refused, and `/mcp` rejects tokens issued for another resource.
 - The only scope is `mcp`. Unknown scopes asked for at sign-in are dropped; a token without `mcp` gets `403 insufficient_scope`.
 - Codes and tokens are stored hashed. Revocation is at `/revoke`.
-
-To sign in on the consent page, the user pastes their API key. That ties every OAuth token to an account, and **revoking the key also invalidates every token issued through it**.
+- **Accounts.** The consent page signs in to an account with email and password, or creates one ([`src/auth/accounts.ts`](src/auth/accounts.ts)). Passwords are stored as salted scrypt hashes, and an unknown email takes as long to reject as a wrong password. Every token acts as the account that approved it.
 
 ```mermaid
 sequenceDiagram
@@ -172,7 +163,7 @@ sequenceDiagram
     C->>B: open /authorize?code_challenge=…&resource=…/mcp
     B->>S: GET /authorize
     S-->>B: consent page
-    B->>S: POST /oauth/consent (API key, Approve)
+    B->>S: POST /oauth/consent (email + password, sign in and approve)
     S-->>B: 302 redirect_uri?code=…&state=…
     B->>C: code
     C->>S: POST /token (code + code_verifier)
@@ -199,7 +190,7 @@ flowchart LR
     subgraph Server["Express app (src/http/app.ts), bound to 127.0.0.1 by default"]
         direction TB
         LOG[access log<br/>request id] --> HOSTCHK[Host header check<br/>DNS-rebinding guard]
-        HOSTCHK --> AUTH[requireBearerAuth<br/>API key or OAuth token<br/>scope + audience]
+        HOSTCHK --> AUTH[requireBearerAuth<br/>OAuth access token<br/>scope + audience]
         AUTH --> RL[rate limit<br/>per account]
         RL --> MCP[MCP server + Streamable HTTP<br/>stateless, per request<br/>src/mcp/server.ts]
         HOSTCHK --> OAUTH[OAuth 2.1 endpoints<br/>/register /authorize /token<br/>/oauth/consent, limited per IP]
@@ -237,11 +228,11 @@ src/
   http/app.ts           routes and middleware
   http/rateLimit.ts     token bucket rate limiter
   mcp/server.ts         the 5 tools + error/logging wrapper
-  auth/apiKeys.ts       create / verify / revoke API keys
+  auth/accounts.ts      email + password accounts (scrypt hashes)
   auth/oauthProvider.ts OAuth 2.1 provider (SQLite-backed)
   auth/consentPage.ts   the sign-in / consent page
   services/             companies, contacts, enrichment, exports
-scripts/                seed, seed-data (fixed-seed generator), create-key, demo-client
+scripts/                seed, seed-data (fixed-seed generator), demo-client
 test/                   unit + end-to-end (real HTTP server, real MCP SDK client)
 ```
 
@@ -256,6 +247,7 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 | **Loopback bind and a Host header check** | The MCP transport spec asks local servers to bind to localhost and guard against DNS rebinding. See `HOST` and `PUBLIC_URL` under Configuration. |
 | **Exports as signed, expiring URLs** | The link must open in a browser or spreadsheet that has no bearer token. An HMAC over `id + expiry`, compared in constant time, makes it unguessable and time-limited without making the download endpoint public. CSV cells are protected against formula injection. |
 | **Expected errors returned as tool results, not protocol errors** | The model reads the result and can correct its call. A protocol error usually stops at the client. |
+| **OAuth as the only sign-in method** | It is the method the MCP authorization spec defines, and clients start it on their own after a `401`. One method then covers every client, with no key to create or hand around. The demo client and the tests run the same flow. |
 | **OAuth through the SDK's handlers, with a custom provider** | The SDK covers the parts that are easy to get wrong (PKCE check, client authentication, metadata). This code owns the storage and the decision of who gets a token. |
 | **Tool descriptions written for the model** | Each says when to use it, what the fields mean, and how it chains to the next tool. Server `instructions` describe the overall flow. |
 
@@ -285,16 +277,16 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 
 ## Testing
 
-`npm test` runs 46 tests in under a second. The end-to-end tests start the real Express app on a random port with an in-memory database and talk to it through the official MCP SDK client:
+`npm test` runs 51 tests in about a second. The end-to-end tests start the real Express app on a random port with an in-memory database and talk to it through the official MCP SDK client:
 
-- the `401` and its `WWW-Authenticate` header, unknown keys, revoked keys
+- the `401` and its `WWW-Authenticate` header, unknown tokens
 - tool discovery: names, schemas, annotations
 - every tool's success path and its `NOT_FOUND` / validation errors, country short forms and unknown countries
 - exports only include enrichment the exporting account did itself
 - export download, a tampered link (`403`), an expired link (`410`)
 - the rate limit (`429` + `Retry-After`), per account and per IP
 - the Host header check (`403` for a foreign host)
-- OAuth: metadata, consent page CSP allowing the client's redirect, wrong key on the consent page, deny, wrong PKCE verifier, code replay, refresh token rotation, unknown scopes dropped, tokens for another resource or without the `mcp` scope refused, revoked key cutting off its tokens
+- OAuth: metadata, consent page CSP allowing the client's redirect, sign-up (once per email), wrong password (email kept, password never echoed), deny, wrong PKCE verifier, code replay, refresh token rotation, token revocation, unknown scopes dropped, tokens for another resource or without the `mcp` scope refused
 - the MCP SDK's own OAuth client running discovery, registration, sign-in and a tool call end to end
 
 ## Known limits and next steps
@@ -303,6 +295,6 @@ test/                   unit + end-to-end (real HTTP server, real MCP SDK client
 - **The enrichment provider is simulated.** Plug in a real vendor through `EnrichmentProvider`, and add a timeout and retries around it.
 - **Exports are stored in the database** (fine at ≤500 rows). Larger exports would stream to object storage and return a pre-signed URL.
 - **Search returns pages through `limit` + `total`.** Add cursor pagination if the dataset grows.
-- **The consent page signs users in with their API key.** In a real product it would hand off to the company's identity provider; the provider code would not change.
+- **Accounts are local, with email and password.** There is no password reset or email check. A real product would hand sign-in to the company's identity provider; only `completeConsent` would change.
 
 All seed data is fictional. Company domains use the reserved `.example` TLD, so none can belong to a real company.
