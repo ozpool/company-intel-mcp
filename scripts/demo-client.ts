@@ -10,7 +10,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 const MCP_URL = new URL(process.env.MCP_URL ?? 'http://localhost:3000/mcp');
 const API_KEY = process.env.MCP_API_KEY;
 if (!API_KEY) {
-  console.error('Set MCP_API_KEY to an API key from `npm run seed` or `npm run create-key`.');
+  console.error('Set MCP_API_KEY to a key from `npm run create-key -- <name>`.');
   process.exit(1);
 }
 
