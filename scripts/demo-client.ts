@@ -2,17 +2,22 @@
  * A scripted MCP client that walks through every feature, for the demo video
  * and as a quick end-to-end check against a running server.
  *
- *   MCP_API_KEY=aik_... npm run demo
+ *   npm run demo
+ *
+ * It signs in through the same OAuth flow a desktop client runs, but fills in the
+ * consent page itself instead of opening a browser. The account is created on the
+ * first run. Override it with MCP_EMAIL and MCP_PASSWORD.
  */
+import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 const MCP_URL = new URL(process.env.MCP_URL ?? 'http://localhost:3000/mcp');
-const API_KEY = process.env.MCP_API_KEY;
-if (!API_KEY) {
-  console.error('Set MCP_API_KEY to an API key from `npm run seed` or `npm run create-key`.');
-  process.exit(1);
-}
+const EMAIL = process.env.MCP_EMAIL ?? 'demo@example.com';
+const PASSWORD = process.env.MCP_PASSWORD ?? 'demo-password';
+// Never opened: the script reads the code from the consent page's redirect itself.
+const REDIRECT_URI = 'http://localhost:7777/callback';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -54,11 +59,63 @@ const res = await fetch(MCP_URL, {
 });
 console.log(red(`✗ HTTP ${res.status}`), dim(res.headers.get('www-authenticate') ?? ''));
 
-heading('Connect with an API key');
+/** Plays the browser's part: open the consent page, sign in (or sign up on the first run), return the code. */
+async function approveOnConsentPage(authorizeUrl: URL): Promise<string> {
+  console.log(dim(`→ GET ${authorizeUrl.pathname} with a PKCE S256 challenge (a desktop client opens this in the browser)`));
+  const html = await (await fetch(authorizeUrl)).text();
+  const pendingId = /name="pending_id" value="([^"]+)"/.exec(html)?.[1];
+  if (!pendingId) throw new Error('The authorization endpoint did not return a consent page.');
+  const submit = (action: 'signin' | 'signup') =>
+    fetch(new URL('/oauth/consent', MCP_URL), {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ pending_id: pendingId, action, email: EMAIL, password: PASSWORD }),
+    });
+  console.log(dim(`→ consent page: sign in as ${EMAIL} and approve`));
+  let res = await submit('signin');
+  if (res.status === 401) {
+    // A failed sign-in leaves the request open, so the same form can create the account instead.
+    res = await submit('signup');
+    if (res.status === 302) console.log(green(`✓ created account ${EMAIL}`));
+  }
+  const location = res.headers.get('location');
+  const code = location && new URL(location).searchParams.get('code');
+  if (!code) throw new Error(`Sign-in failed with HTTP ${res.status}. Check MCP_EMAIL and MCP_PASSWORD.`);
+  return code;
+}
+
+heading('Sign in with OAuth 2.1 + PKCE');
+const saved: { client?: OAuthClientInformationMixed; tokens?: OAuthTokens; verifier?: string } = {};
+let authorizationCode = '';
+const authProvider: OAuthClientProvider = {
+  redirectUrl: REDIRECT_URI,
+  clientMetadata: { client_name: 'Demo client', redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: 'none' },
+  clientInformation: () => saved.client,
+  saveClientInformation: (info) => {
+    saved.client = info;
+    console.log(dim(`→ discovered the authorization server and registered as client ${info.client_id}`));
+  },
+  tokens: () => saved.tokens,
+  saveTokens: (tokens) => void (saved.tokens = tokens),
+  saveCodeVerifier: (verifier) => void (saved.verifier = verifier),
+  codeVerifier: () => saved.verifier!,
+  redirectToAuthorization: async (url) => void (authorizationCode = await approveOnConsentPage(url)),
+};
+const signInTransport = new StreamableHTTPClientTransport(MCP_URL, { authProvider });
+try {
+  await new Client({ name: 'demo-client', version: '1.0.0' }).connect(signInTransport);
+} catch (err) {
+  if (!(err instanceof UnauthorizedError)) throw err;
+}
+await signInTransport.finishAuth(authorizationCode);
+console.log(green(`✓ code exchanged for an access token (expires in ${saved.tokens?.expires_in}s) and a refresh token`));
+
+heading('Connect with the access token');
 const client = new Client({ name: 'demo-client', version: '1.0.0' });
-await client.connect(new StreamableHTTPClientTransport(MCP_URL, { requestInit: { headers: { Authorization: `Bearer ${API_KEY}` } } }));
+await client.connect(new StreamableHTTPClientTransport(MCP_URL, { authProvider }));
 const info = client.getServerVersion();
-console.log(green(`✓ connected to ${info?.name} v${info?.version}`));
+console.log(green(`✓ connected to ${info?.name} v${info?.version} as ${EMAIL}`));
 
 heading('Discover tools');
 const { tools } = await client.listTools();
