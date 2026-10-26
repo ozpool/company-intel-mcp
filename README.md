@@ -17,7 +17,8 @@ Requires **Node.js 22.13 or newer**.
 ```bash
 npm install
 cp .env.example .env        # optional; the defaults work for local use
-npm run seed                # loads sample data and prints your API key (shown once)
+npm run seed                # loads the sample data (companies and contacts only)
+npm run create-key -- demo  # prints an API key once; copy it
 npm run dev                 # http://localhost:3000/mcp
 ```
 
@@ -31,8 +32,8 @@ MCP_API_KEY=aik_... npm run demo
 |---|---|
 | `npm run dev` | Start with reload on change |
 | `npm run build && npm start` | Production build and run |
-| `npm run seed` | Reset the sample data. API keys are kept; a first key is created if none exist. |
-| `npm run create-key -- <name>` | Create another API key (another account) |
+| `npm run seed` | Reset the sample data. API keys and OAuth sign-ins are kept. |
+| `npm run create-key -- <name>` | Create an API key (one account per key). Only its hash is stored, so it is shown once. |
 | `npm test` | Unit and end-to-end tests |
 | `npm run typecheck` | Type-check everything, including tests and scripts |
 
@@ -42,7 +43,7 @@ MCP_API_KEY=aik_... npm run demo
 
 ## Connect an MCP client
 
-Ready-made configs are in [`examples/`](examples). Replace `aik_your_key_here` with the key from `npm run seed`.
+Ready-made configs are in [`examples/`](examples). Replace `aik_your_key_here` with the key from `npm run create-key`.
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`). Claude Desktop starts local commands, so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridges it to the HTTP server:
 
