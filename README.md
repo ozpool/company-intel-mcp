@@ -37,7 +37,7 @@ Start the server first (`npm run dev`). Example configs are in [`examples/`](exa
 Needs Node.js, because it connects through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote).
 
 1. Open **Settings → Developer → Edit Config**. This opens `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
-2. Copy in **one** of the two entries from [`claude_desktop_config.json`](examples/claude_desktop_config.json): `company-intel` signs in through the browser (OAuth), `company-intel-api-key` uses an API key. With both, every tool shows up twice.
+2. Copy in one of the examples: [`claude_desktop_config.oauth.json`](examples/claude_desktop_config.oauth.json) signs in through the browser (OAuth), [`claude_desktop_config.api-key.json`](examples/claude_desktop_config.api-key.json) uses an API key (replace `aik_your_key_here`).
 3. Quit Claude Desktop fully and reopen it. With OAuth, a browser tab opens: sign in or create an account, then approve.
 
 ### Claude Code
