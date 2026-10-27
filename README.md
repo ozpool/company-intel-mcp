@@ -69,6 +69,8 @@ Then run `/mcp` in Claude Code, pick `company-intel` and sign in through the bro
 
 - **Connection refused**: the server is not running, or runs on another port (`PORT` in `.env`).
 - **`company-intel` missing in Claude Desktop**: the config was edited while the app was open, or `npx` was not found (see step 4 above). Quit the app, check the file still has the `mcpServers` block, then reopen it.
+- **Claude Desktop says "Refused to open sign-in URL … must be https"**: that comes from a server added in the Code tab (for example with `claude mcp add`), which only opens `https` sign-in pages. For this local server use a normal chat with the config above, where `mcp-remote` opens the sign-in page.
+- **VS Code: `invalid_client` / "Invalid client_id" in the browser** (for example after deleting or recreating `data/app.db`): VS Code reuses a client it registered with the old database. Run **Authentication: Remove Dynamic Authentication Providers** from the Command Palette, remove the `localhost:3000` entry, then restart the server from `.vscode/mcp.json`.
 - **401 Unauthorized**: the API key is wrong, revoked or empty. Create a new one with `npm run create-key -- <email>`.
 - **OAuth worked before, now fails** (for example after deleting `data/app.db`): clear the sign-in `mcp-remote` saved with `rm -rf ~/.mcp-auth`, then restart the client.
 
