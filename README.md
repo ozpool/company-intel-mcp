@@ -2,6 +2,10 @@
 
 An MCP server to search companies, find contacts, enrich them with email and LinkedIn, and export them to CSV. Built with Node.js, TypeScript, Express and SQLite.
 
+![Demo: browser sign-in, then Claude Desktop and GitHub Copilot calling the tools](assets/demo.gif)
+
+Full demo with voiceover (4 min): [assets/company-intel-mcp-demo.mp4](assets/company-intel-mcp-demo.mp4)
+
 ## Setup
 
 Requires Node.js 22.13 or newer.
